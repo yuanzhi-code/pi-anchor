@@ -1,0 +1,44 @@
+{
+  "tasks": [
+    {
+      "id": 1,
+      "text": "使用scout分析代码库结构，识别潜在问题",
+      "done": false,
+      "createdAt": 1777398179446,
+      "goalId": "goal_1777398075284_7wd5f2mzz"
+    },
+    {
+      "id": 2,
+      "text": "使用reviewer审查extensions/index.ts代码质量",
+      "done": false,
+      "createdAt": 1777398180747,
+      "goalId": "goal_1777398075284_7wd5f2mzz"
+    },
+    {
+      "id": 3,
+      "text": "使用worker编写单元测试覆盖核心功能",
+      "done": false,
+      "createdAt": 1777398182187,
+      "goalId": "goal_1777398075284_7wd5f2mzz"
+    },
+    {
+      "id": 4,
+      "text": "使用worker修复发现的bug",
+      "done": false,
+      "createdAt": 1777398183741,
+      "goalId": "goal_1777398075284_7wd5f2mzz"
+    },
+    {
+      "id": 5,
+      "text": "运行测试验证修复",
+      "done": false,
+      "createdAt": 1777398187199,
+      "goalId": "goal_1777398075284_7wd5f2mzz"
+    }
+  ],
+  "nextId": 6,
+  "autoResume": true,
+  "maxAutoResume": 20,
+  "currentGoal": "review整个项目的bug，编写项目测试，修复项目中存在的bug。合理拆分任务 并不要吝啬subagent的调用次数大量调用。模型采用mimo-v2.5-pro即可。",
+  "goalId": "goal_1777398075284_7wd5f2mzz"
+}
