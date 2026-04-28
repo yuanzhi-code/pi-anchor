@@ -1,140 +1,139 @@
-# 锚（pi-anchor）
+# Anchor (pi-anchor)
 
-> 锚定任务，不走偏、不遗漏、持续推进至完成。
+> Anchor your tasks — stay on track, miss nothing, and push through to completion.
 
-一个为 [Pi](https://pi.dev) 设计的持久化任务插件，内置自动续命机制——当 AI 空闲或上下文压缩时，它会像船锚一样把 AI 拉回未完成的任务，防止项目"飘走"。
+A persistent task plugin for [Pi](https://pi.dev) with an auto-retry mechanism. When the AI is idle or context is compressed, it pulls the AI back to unfinished tasks like a ship's anchor, preventing the project from "drifting away."
 
-## 核心理念
+## Core Philosophy
 
-- **用户只负责设定目标** - 用自然语言描述想做什么
-- **AI 负责拆解任务** - 把大目标分解成可执行的小步骤
-- **自动持续推进** - 空闲时自动提醒，直到任务全部完成
+- **Users only set goals** — describe what you want in natural language
+- **AI handles decomposition** — breaks big goals into executable small steps
+- **Auto-progressive push** — reminds automatically when idle until all tasks are done
 
-## 安装
+## Installation
 
 ```bash
-# 全局安装
+# Global install
 pi install npm:pi-anchor
 
-# 项目本地安装
+# Local install
 pi install -l npm:pi-anchor
 ```
 
-## 使用方法
+## Usage
 
-### 基本命令
+### Basic Commands
 
 ```text
-/tasks <目标>           设置目标，AI 自动拆解任务
-/tasks                  查看当前状态和任务列表
-/tasks help             显示帮助
-/tasks goal             显示当前目标
-/tasks goal clear       清除当前目标
-/tasks auto on|off      开启/关闭自动续命
-/tasks limit <n>        设置最大自动重试次数
-/tasks clear            清除所有任务和目标
+/anchor <goal>           Set a goal, AI auto-decomposes into tasks
+/anchor                  View current status and task list
+/anchor help             Show help
+/anchor auto on|off      Enable/disable auto-retry (also: auto retry on|off)
+/anchor limit <n>        Set max auto-retry count
+/anchor clear            Clear all tasks and goal
 ```
 
-### 工作流程
+### Workflow
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  用户: /tasks 实现用户登录功能                               │
+│  User: /anchor implement user login                         │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  系统: 目标已设置，正在让 AI 拆解任务...                     │
+│  System: Goal set. Asking AI to decompose tasks...          │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  AI 自动拆解并添加任务:                                     │
-│    ✓ #1 创建用户数据模型                                    │
-│    ✓ #2 实现密码哈希                                        │
-│    ✓ #3 创建登录 API 端点                                   │
-│    ✓ #4 添加 JWT 令牌生成                                   │
-│    ✓ #5 编写单元测试                                        │
+│  AI auto-decomposes and adds tasks:                         │
+│    ✓ #1 Create user data model                              │
+│    ✓ #2 Implement password hashing                          │
+│    ✓ #3 Create login API endpoint                           │
+│    ✓ #4 Add JWT token generation                            │
+│    ✓ #5 Write unit tests                                    │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  AI 逐步完成每个任务，标记完成                               │
+│  AI completes each task step by step, marking them done     │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│  ⏰ 自动续命: 有任务未完成时自动提醒                        │
+│  ⏰ Auto-retry: reminds automatically when tasks remain     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 查看状态
+### Viewing Status
 
 ```
-用户: /tasks
+User: /anchor
 
-显示:
+Display:
   ⚓ Tasks · ⏳ 3/5 pending · auto on · retry 0/20
   
-    🎯 实现用户登录功能
+    🎯 Implement user login
   
-    📋 待完成 (3):
-      □ #3 创建登录 API 端点
-      □ #4 添加 JWT 令牌生成
-      □ #5 编写单元测试
+    📋 Pending (3):
+      □ #3 Create login API endpoint
+      □ #4 Add JWT token generation
+      □ #5 Write unit tests
     
-    ✅ 已完成 (2):
-      ✓ #1 创建用户数据模型
-      ✓ #2 实现密码哈希
+    ✅ Completed (2):
+      ✓ #1 Create user data model
+      ✓ #2 Implement password hashing
 ```
 
-### 命令自动补全
+### Command Autocompletion
 
-输入 `/tasks` 后会显示可用命令的动态提示:
+After typing `/anchor`, dynamic hints for available commands are shown:
 
 ```
-> /tasks
+> /anchor
 ┌─────────────────────────────────────────┐
-│ /tasks <目标>   设置目标，AI 自动拆解   │
-│ help            显示帮助                │
-│ auto on         开启自动续命            │
-│ auto off        关闭自动续命            │
-│ limit <n>       设置最大重试次数        │
-│ clear           清除所有任务            │
-│ goal            显示当前目标            │
-│ goal clear      清除目标                │
+│ /anchor <goal>   Set goal, AI decomposes│
+│ help             Show help              │
+│ auto on          Enable auto-retry      │
+│ auto off         Disable auto-retry     │
+│ limit <n>        Set max retry limit    │
+│ list             Show task list         │
+│ clear            Clear all tasks        │
 └─────────────────────────────────────────┘
 ```
 
-输入部分字符会自动过滤:
+Partial input auto-filters:
 ```
-> /tasks au
+> /anchor au
 ┌─────────────────────────────────────────┐
-│ auto on         开启自动续命            │
-│ auto off        关闭自动续命            │
+│ auto on          Enable auto-retry      │
+│ auto off         Disable auto-retry     │
+│ auto retry on    Enable (full syntax)   │
+│ auto retry off   Disable (full syntax)  │
 └─────────────────────────────────────────┘
 ```
 
-输入其他内容会被视为目标:
+Any other input is treated as a goal:
 ```
-> /tasks 实现用户登录功能
-→ 设置目标，触发 AI 拆解任务
-```
-
-### 自动续命机制
-
-当 AI 完成一轮对话后，如果有未完成的任务，会自动注入提醒:
-
-```
-🎯 用户目标: 实现用户登录功能
-
-📋 分解的任务 (3/5 未完成):
-- [ ] #3: 创建登录 API 端点
-- [ ] #4: 添加 JWT 令牌生成
-- [ ] #5: 编写单元测试
-
-请继续完成这些任务，不要停下来。
+> /anchor implement user login
+→ Set goal, trigger AI decomposition
 ```
 
-### 状态文件
+### Auto-Retry Mechanism
 
-任务按 session 存储在项目目录:
+When the AI finishes a turn, if there are unfinished tasks, a reminder is automatically injected:
+
+```
+🎯 User Goal: Implement user login
+
+📋 Decomposed Tasks (3/5 pending):
+- [ ] #3: Create login API endpoint
+- [ ] #4: Add JWT token generation
+- [ ] #5: Write unit tests
+
+Please continue completing these tasks without stopping.
+```
+
+### State Files
+
+Tasks are stored per session in the project directory:
 
 ```
 your-project/
@@ -144,7 +143,7 @@ your-project/
 └── ...
 ```
 
-JSON 结构:
+JSON structure:
 ```json
 {
   "tasks": [
@@ -159,50 +158,50 @@ JSON 结构:
   "nextId": 2,
   "autoResume": true,
   "maxAutoResume": 20,
-  "currentGoal": "实现用户登录功能",
+  "currentGoal": "Implement user login",
   "goalId": "goal_123_abc"
 }
 ```
 
-## 开发
+## Development
 
-### 本地测试
+### Local Testing
 
 ```bash
-# 方法 1: 从本地路径安装
+# Method 1: Install from local path
 cd /path/to/test-project
 pi install -l /Users/yuanzhi/code/pi-task-persistence
 pi
 
-# 方法 2: 直接加载扩展
+# Method 2: Load extension directly
 cd /path/to/test-project
 pi -e /Users/yuanzhi/code/pi-task-persistence/extensions/index.ts
 ```
 
-### 验证清单
+### Verification Checklist
 
-| # | 操作 | 预期结果 |
-|---|------|----------|
-| 1 | 输入 `/tasks` | 显示状态和动态命令提示 |
-| 2 | 输入 `/tasks 实现登录功能` | 设置目标，显示"正在让 AI 拆解任务" |
-| 3 | 查看 TUI widget | 显示目标和任务列表 |
-| 4 | 观察 AI 行为 | AI 自动调用 task tool 添加任务 |
-| 5 | 等待 AI 完成 | 自动注入续命提醒 |
-| 6 | AI 继续完成任务 | 任务逐步标记完成 |
+| # | Action | Expected Result |
+|---|--------|-----------------|
+| 1 | Type `/anchor` | Show status and dynamic command hints |
+| 2 | Type `/anchor implement login` | Set goal, show "Asking AI to decompose..." |
+| 3 | View TUI widget | Show goal and task list |
+| 4 | Observe AI behavior | AI auto-calls task tool to add tasks |
+| 5 | Wait for AI finish | Auto-retry reminder injected |
+| 6 | AI continues tasks | Tasks marked done progressively |
 
-### 卸载
+### Uninstall
 
 ```bash
 pi remove /Users/yuanzhi/code/pi-task-persistence
 ```
 
-## 设计理念
+## Design Philosophy
 
-- **目标驱动**: 用户只需说出想做什么，AI 负责规划怎么做
-- **持续推进**: 通过自动续命机制，确保任务不会被遗忘
-- **渐进式完成**: 大目标拆解为小任务，逐步完成
-- **上下文保持**: 目标和任务持久化，重启后自动恢复
+- **Goal-driven**: Users just say what they want; AI plans how to do it
+- **Continuous push**: Through auto-retry, tasks are never forgotten
+- **Incremental completion**: Big goals decomposed into small tasks, done step by step
+- **Context persistence**: Goals and tasks are persisted and auto-restored after restart
 
-## 许可
+## License
 
 MIT

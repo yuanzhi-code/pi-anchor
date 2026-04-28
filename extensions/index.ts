@@ -4,11 +4,12 @@
  * 锚定任务，不走偏、不遗漏、持续推进至完成。
  *
  * Core behavior:
- * - User sets goals via `/tasks <goal>`
+ * - User sets goals via `/anchor <goal>`
  * - AI decomposes goals into concrete tasks using the `task` tool
  * - State is persisted to `{cwd}/.pi/tasks/<session-id>.json`
  * - Auto-retry shows remaining tasks when agent is idle
- * - Dynamic command completions for /tasks
+ * - Dynamic command completions for /anchor
+ * - Widget is hidden by default, only shown after `/anchor` is invoked
  */
 
 import { StringEnum } from "@mariozechner/pi-ai";
@@ -17,6 +18,7 @@ import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { t, tf } from "./i18n";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,14 +42,22 @@ interface TaskState {
   currentGoal?: string;
   /** Unique goal identifier for grouping tasks */
   goalId?: string;
+  /** Whether to show the widget in TUI */
+  showWidget?: boolean;
 }
 
 interface TaskDetails {
-  action: "list" | "add" | "toggle" | "delete" | "clear" | "set-goal";
+  action: "list" | "add" | "toggle" | "delete" | "clear";
   tasks: Task[];
   nextId: number;
   currentGoal?: string;
   error?: string;
+}
+
+interface TaskToolParams {
+  action: "list" | "add" | "toggle" | "delete" | "clear";
+  text?: string;
+  id?: number;
 }
 
 interface Runtime {
@@ -66,13 +76,16 @@ const RESUME_DELAY_MS = 800;
 const TASK_DIR = ".pi";
 const TASK_SUBDIR = "tasks";
 
-/** Command completions for /tasks */
-const TASK_COMMANDS: AutocompleteItem[] = [
-  { value: "help", description: "Show available commands" },
-  { value: "auto retry on", description: "Enable auto-retry when tasks remain" },
-  { value: "auto retry off", description: "Disable auto-retry" },
-  { value: "limit", description: "Set max consecutive auto-retries (e.g. limit 10)" },
-  { value: "clear", description: "Clear all tasks and goal" },
+/** Command completions for /anchor */
+const ANCHOR_COMMANDS: AutocompleteItem[] = [
+  { value: "help", description: t("cmdHelpDesc") },
+  { value: "auto on", description: t("cmdAutoOnDesc") },
+  { value: "auto off", description: t("cmdAutoOffDesc") },
+  { value: "auto retry on", description: t("cmdAutoRetryOnDesc") },
+  { value: "auto retry off", description: t("cmdAutoRetryOffDesc") },
+  { value: "limit", description: t("cmdLimitDesc") },
+  { value: "list", description: t("cmdListDesc") },
+  { value: "clear", description: t("cmdClearDesc") },
 ];
 
 // ---------------------------------------------------------------------------
@@ -80,7 +93,7 @@ const TASK_COMMANDS: AutocompleteItem[] = [
 // ---------------------------------------------------------------------------
 
 function safeSessionKey(sessionKey: string): string {
-  return sessionKey.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
 function taskFilePath(cwd: string, sessionKey: string): string {
@@ -95,39 +108,75 @@ function ensureTaskDir(cwd: string): void {
 }
 
 function generateGoalId(): string {
-  return `goal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `goal_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function sanitizeTask(value: unknown): Task | null {
+  if (!isRecord(value)) return null;
+
+  const { id, text, done, createdAt, goalId } = value;
+  if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return null;
+  if (typeof text !== "string") return null;
+  if (typeof done !== "boolean") return null;
+
+  return {
+    id,
+    text,
+    done,
+    createdAt: typeof createdAt === "number" ? createdAt : Date.now(),
+    goalId: typeof goalId === "string" ? goalId : undefined,
+  };
 }
 
 function loadState(cwd: string, sessionKey: string): TaskState {
   const file = taskFilePath(cwd, sessionKey);
   try {
     if (fs.existsSync(file)) {
-      const data = JSON.parse(fs.readFileSync(file, "utf-8"));
-      if (Array.isArray(data.tasks) && typeof data.nextId === "number") {
+      const data: unknown = JSON.parse(fs.readFileSync(file, "utf-8"));
+      if (isRecord(data) && Array.isArray(data.tasks)) {
+        const tasks = data.tasks.map(sanitizeTask).filter((t): t is Task => t !== null);
+        const maxTaskId = tasks.reduce((max, task) => Math.max(max, task.id), 0);
+        const storedNextId = data.nextId;
+        const storedMaxAutoResume = data.maxAutoResume;
+        const nextId = typeof storedNextId === "number" && Number.isInteger(storedNextId) && storedNextId > maxTaskId
+          ? storedNextId
+          : maxTaskId + 1;
+        const maxAutoResume = typeof storedMaxAutoResume === "number" && Number.isInteger(storedMaxAutoResume) && storedMaxAutoResume >= 0
+          ? storedMaxAutoResume
+          : DEFAULT_MAX_AUTO_RESUME;
+
         return {
-          tasks: data.tasks,
-          nextId: data.nextId,
+          tasks,
+          nextId,
           autoResume: typeof data.autoResume === "boolean" ? data.autoResume : true,
-          maxAutoResume:
-            typeof data.maxAutoResume === "number" ? data.maxAutoResume : DEFAULT_MAX_AUTO_RESUME,
-          currentGoal: data.currentGoal || undefined,
-          goalId: data.goalId || undefined,
+          maxAutoResume,
+          currentGoal: typeof data.currentGoal === "string" && data.currentGoal ? data.currentGoal : undefined,
+          goalId: typeof data.goalId === "string" && data.goalId ? data.goalId : undefined,
+          showWidget: typeof data.showWidget === "boolean" ? data.showWidget : false,
         };
       }
     }
   } catch {
     // ignore corrupted file
   }
-  return { tasks: [], nextId: 1, autoResume: true, maxAutoResume: DEFAULT_MAX_AUTO_RESUME };
+  return { tasks: [], nextId: 1, autoResume: true, maxAutoResume: DEFAULT_MAX_AUTO_RESUME, showWidget: false };
 }
 
-function saveState(cwd: string, sessionKey: string, state: TaskState): void {
-  ensureTaskDir(cwd);
-  const file = taskFilePath(cwd, sessionKey);
+function saveState(cwd: string, sessionKey: string, state: TaskState): boolean {
   try {
-    fs.writeFileSync(file, JSON.stringify(state, null, 2));
+    ensureTaskDir(cwd);
+    const file = taskFilePath(cwd, sessionKey);
+    const tmpFile = file + ".tmp";
+    fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2));
+    fs.renameSync(tmpFile, file);
+    return true;
   } catch (e) {
     console.error("[anchor] failed to save state:", e);
+    return false;
   }
 }
 
@@ -143,16 +192,16 @@ function buildResumeMessage(state: TaskState): string {
 
   // Show user's original goal
   if (state.currentGoal) {
-    parts.push(`🎯 用户目标: ${state.currentGoal}`);
+    parts.push(`🎯 ${t("userGoal")}: ${state.currentGoal}`);
     parts.push("");
-    parts.push(`📋 分解的任务 (${undone.length}/${state.tasks.length} 未完成):`);
+    parts.push(`📋 ${t("decomposedTasks")} (${undone.length}/${state.tasks.length} ${t("pendingLabel")}):`);
   } else {
-    parts.push(`📋 剩余任务 (${undone.length}/${state.tasks.length}):`);
+    parts.push(`📋 ${t("remainingTasks")} (${undone.length}/${state.tasks.length}):`);
   }
 
   parts.push(...undone.map((t) => `- [ ] #${t.id}: ${t.text}`));
   parts.push("");
-  parts.push("请继续完成这些任务，不要停下来。");
+  parts.push(tf("pendingCount", String(undone.length)));
 
   return parts.join("\n");
 }
@@ -163,7 +212,7 @@ function hasUndoneTasks(state: TaskState): boolean {
 
 function createRuntime(): Runtime {
   return {
-    state: { tasks: [], nextId: 1, autoResume: true, maxAutoResume: DEFAULT_MAX_AUTO_RESUME },
+    state: { tasks: [], nextId: 1, autoResume: true, maxAutoResume: DEFAULT_MAX_AUTO_RESUME, showWidget: false },
     autoResumeCount: 0,
     pendingTimer: null,
     pendingMessage: null,
@@ -207,12 +256,18 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     return runtime;
   };
 
-  const saveRuntime = (ctx: ExtensionContext, runtime: Runtime): void => {
-    saveState(ctx.cwd, getSessionKey(ctx), runtime.state);
+  const saveRuntime = (ctx: ExtensionContext, runtime: Runtime): boolean => {
+    return saveState(ctx.cwd, getSessionKey(ctx), runtime.state);
   };
 
   const updateTodoWidget = (ctx: ExtensionContext, runtime: Runtime): void => {
     const { state } = runtime;
+
+    // Hide widget by default - only show when user explicitly invoked /anchor
+    if (!state.showWidget) {
+      ctx.ui.setWidget("pi-anchor", undefined);
+      return;
+    }
     const theme = ctx.ui.theme;
     const todo = state.tasks.filter((t) => !t.done);
     const done = state.tasks.filter((t) => t.done);
@@ -223,7 +278,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       : theme.fg("dim", `retry 0/${state.maxAutoResume}`);
     const statusText = todo.length === 0
       ? theme.fg("success", `${done.length}/${state.tasks.length} done`)
-      : theme.fg("warning", `${todo.length}/${state.tasks.length} pending`);
+      : theme.fg("warning", `${done.length}/${state.tasks.length} pending`);
     
     const header = [
       theme.fg("accent", "⚓ Tasks"),
@@ -232,7 +287,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       retryText,
     ].join(" · ");
 
-    const helpHint = theme.fg("dim", "  💡 ") + theme.fg("accent", "/tasks <目标>") + theme.fg("dim", " 设置目标 | ") + theme.fg("accent", "/tasks help");
+    const helpHint = theme.fg("dim", "  💡 ") + theme.fg("accent", t("setGoalHint")) + theme.fg("dim", t("setGoalPipe")) + theme.fg("accent", "/anchor help");
 
     // Show current goal if exists
     const goalLine = state.currentGoal
@@ -240,7 +295,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       : [];
 
     if (state.tasks.length === 0) {
-      ctx.ui.setWidget("pi-anchor", [header, ...goalLine, theme.fg("dim", "  No tasks yet"), "", helpHint]);
+      ctx.ui.setWidget("pi-anchor", [header, ...goalLine, theme.fg("dim", t("noTasksWidget")), "", helpHint]);
       return;
     }
 
@@ -251,7 +306,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       return theme.fg("text", `  □ #${t.id} ${t.text}`);
     });
     const extra = state.tasks.length > visible.length
-      ? [theme.fg("dim", `  … ${state.tasks.length - visible.length} more`)]
+      ? [theme.fg("dim", tf("moreTasks", String(state.tasks.length - visible.length)))]
       : [];
     ctx.ui.setWidget("pi-anchor", [header, ...goalLine, ...lines, ...extra, "", helpHint]);
   };
@@ -266,20 +321,24 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
   };
 
   // Schedule an auto-resume message
-  const scheduleResume = (ctx: ExtensionContext, runtime: Runtime, message: string): void => {
+  const scheduleResume = (ctx: ExtensionContext, runtime: Runtime): void => {
     cancelPending(runtime);
-    runtime.pendingMessage = message;
     runtime.pendingTimer = setTimeout(() => {
       runtime.pendingTimer = null;
       runtime.pendingMessage = null;
 
-      // Double-check agent is still idle
+      // Double-check the current state before injecting a follow-up.
+      if (!runtime.state.autoResume) return;
+      if (!hasUndoneTasks(runtime.state)) return;
       if (!ctx.isIdle() || ctx.hasPendingMessages()) return;
 
       if (runtime.autoResumeCount >= runtime.state.maxAutoResume) {
         ctx.ui.notify(`Task auto-retry limit reached (${runtime.state.maxAutoResume})`, "info");
         return;
       }
+
+      const message = buildResumeMessage(runtime.state);
+      if (!message) return;
 
       runtime.autoResumeCount++;
       updateTodoWidget(ctx, runtime);
@@ -291,14 +350,16 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
   // Session lifecycle
   // -----------------------------------------------------------------------
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (_event: unknown, ctx: ExtensionContext) => {
     const runtime = refreshRuntime(ctx);
     runtime.autoResumeCount = 0;
     cancelPending(runtime);
+    runtime.state.showWidget = false;
+    saveRuntime(ctx, runtime);
     updateTodoWidget(ctx, runtime);
   });
 
-  pi.on("session_shutdown", async (_event, ctx) => {
+  pi.on("session_shutdown", async (_event: unknown, ctx: ExtensionContext) => {
     const runtime = getRuntime(ctx);
     cancelPending(runtime);
     saveRuntime(ctx, runtime);
@@ -307,19 +368,23 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
   });
 
   // Save before switching/forking sessions
-  pi.on("session_before_switch", async (_event, ctx) => {
-    saveRuntime(ctx, getRuntime(ctx));
+  pi.on("session_before_switch", async (_event: unknown, ctx: ExtensionContext) => {
+    const runtime = getRuntime(ctx);
+    cancelPending(runtime);
+    saveRuntime(ctx, runtime);
   });
 
-  pi.on("session_before_fork", async (_event, ctx) => {
-    saveRuntime(ctx, getRuntime(ctx));
+  pi.on("session_before_fork", async (_event: unknown, ctx: ExtensionContext) => {
+    const runtime = getRuntime(ctx);
+    cancelPending(runtime);
+    saveRuntime(ctx, runtime);
   });
 
   // -----------------------------------------------------------------------
   // Auto-resume triggers
   // -----------------------------------------------------------------------
 
-  pi.on("agent_end", async (_event, ctx) => {
+  pi.on("agent_end", async (_event: unknown, ctx: ExtensionContext) => {
     const runtime = refreshRuntime(ctx);
     updateTodoWidget(ctx, runtime);
     cancelPending(runtime);
@@ -329,13 +394,10 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     if (runtime.autoResumeCount >= runtime.state.maxAutoResume) return;
     if (!ctx.isIdle() || ctx.hasPendingMessages()) return;
 
-    const message = buildResumeMessage(runtime.state);
-    if (message) {
-      scheduleResume(ctx, runtime, message);
-    }
+    scheduleResume(ctx, runtime);
   });
 
-  pi.on("session_compact", async (_event, ctx) => {
+  pi.on("session_compact", async (_event: unknown, ctx: ExtensionContext) => {
     const runtime = refreshRuntime(ctx);
     updateTodoWidget(ctx, runtime);
     cancelPending(runtime);
@@ -345,23 +407,21 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     if (runtime.autoResumeCount >= runtime.state.maxAutoResume) return;
     if (!ctx.isIdle() || ctx.hasPendingMessages()) return;
 
-    const message = buildResumeMessage(runtime.state);
-    if (message) {
-      scheduleResume(ctx, runtime, message);
-    }
+    scheduleResume(ctx, runtime);
   });
 
   // Reset auto-resume counter when user sends a manual message
-  pi.on("input", async (event, ctx) => {
+  pi.on("input", async (event: { source?: string }, ctx: ExtensionContext) => {
     if (event.source === "interactive") {
       const runtime = getRuntime(ctx);
       runtime.autoResumeCount = 0;
+      cancelPending(runtime);
     }
     return { action: "continue" };
   });
 
   // Cancel pending when a new turn starts
-  pi.on("agent_start", async (_event, ctx) => {
+  pi.on("agent_start", async (_event: unknown, ctx: ExtensionContext) => {
     const runtime = getRuntime(ctx);
     cancelPending(runtime);
   });
@@ -391,7 +451,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     ],
     parameters: TaskParams,
 
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId: string, params: TaskToolParams, _signal: unknown, _onUpdate: unknown, ctx: ExtensionContext) {
       const runtime = refreshRuntime(ctx);
       const { state } = runtime;
 
@@ -409,7 +469,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
             parts.push("Tasks:");
             parts.push(...state.tasks.map((t) => `[${t.done ? "x" : " "}] #${t.id}: ${t.text}`));
           } else {
-            parts.push("No tasks yet.");
+            parts.push(t("noTasksYet"));
           }
           
           parts.push("");
@@ -429,7 +489,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
         case "add": {
           if (!params.text) {
             return {
-              content: [{ type: "text", text: "Error: text required for add" }],
+              content: [{ type: "text", text: t("errAddTextRequired") }],
               details: {
                 action: "add",
                 tasks: [...state.tasks],
@@ -446,7 +506,17 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
             goalId: state.goalId, // Associate with current goal if exists
           };
           state.tasks.push(task);
-          saveRuntime(ctx, runtime);
+          if (!saveRuntime(ctx, runtime)) {
+            return {
+              content: [{ type: "text", text: t("errSaveTaskState") }],
+              details: {
+                action: "add",
+                tasks: [...state.tasks],
+                nextId: state.nextId,
+                error: "save failed",
+              } as TaskDetails,
+            };
+          }
           updateTodoWidget(ctx, runtime);
           return {
             content: [
@@ -464,7 +534,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           if (params.id === undefined) {
             return {
               content: [
-                { type: "text", text: "Error: id required for toggle" },
+                { type: "text", text: t("errToggleIdRequired") },
               ],
               details: {
                 action: "toggle",
@@ -480,7 +550,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
               content: [
                 {
                   type: "text",
-                  text: `Task #${params.id} not found`,
+                  text: tf("errTaskNotFound", String(params.id)),
                 },
               ],
               details: {
@@ -492,7 +562,17 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
             };
           }
           task.done = !task.done;
-          saveRuntime(ctx, runtime);
+          if (!saveRuntime(ctx, runtime)) {
+            return {
+              content: [{ type: "text", text: t("errSaveTaskState") }],
+              details: {
+                action: "toggle",
+                tasks: [...state.tasks],
+                nextId: state.nextId,
+                error: "save failed",
+              } as TaskDetails,
+            };
+          }
           updateTodoWidget(ctx, runtime);
           return {
             content: [
@@ -513,7 +593,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           if (params.id === undefined) {
             return {
               content: [
-                { type: "text", text: "Error: id required for delete" },
+                { type: "text", text: t("errDeleteIdRequired") },
               ],
               details: {
                 action: "delete",
@@ -529,7 +609,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
               content: [
                 {
                   type: "text",
-                  text: `Task #${params.id} not found`,
+                  text: tf("errTaskNotFound", String(params.id)),
                 },
               ],
               details: {
@@ -541,7 +621,17 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
             };
           }
           const [removed] = state.tasks.splice(index, 1);
-          saveRuntime(ctx, runtime);
+          if (!saveRuntime(ctx, runtime)) {
+            return {
+              content: [{ type: "text", text: t("errSaveTaskState") }],
+              details: {
+                action: "delete",
+                tasks: [...state.tasks],
+                nextId: state.nextId,
+                error: "save failed",
+              } as TaskDetails,
+            };
+          }
           updateTodoWidget(ctx, runtime);
           return {
             content: [
@@ -559,16 +649,33 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           const count = state.tasks.length;
           state.tasks = [];
           state.nextId = 1;
-          saveRuntime(ctx, runtime);
+          state.currentGoal = undefined;
+          state.goalId = undefined;
+          runtime.autoResumeCount = 0;
+          cancelPending(runtime);
+          state.showWidget = false;
+          if (!saveRuntime(ctx, runtime)) {
+            return {
+              content: [{ type: "text", text: t("errSaveTaskState") }],
+              details: {
+                action: "clear",
+                tasks: [],
+                nextId: 1,
+                currentGoal: undefined,
+                error: "save failed",
+              } as TaskDetails,
+            };
+          }
           updateTodoWidget(ctx, runtime);
           return {
             content: [
-              { type: "text", text: `Cleared ${count} tasks` },
+              { type: "text", text: `Cleared ${count} tasks and goal` },
             ],
             details: {
               action: "clear",
               tasks: [],
               nextId: 1,
+              currentGoal: undefined,
             } as TaskDetails,
           };
         }
@@ -593,7 +700,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
   });
 
   // -----------------------------------------------------------------------
-  // /tasks command for users
+  // /anchor command for users
   // -----------------------------------------------------------------------
 
   const parseCommandArgs = (args: unknown): string[] => {
@@ -602,7 +709,13 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     return [];
   };
 
-  const formatTaskList = (state: TaskState, theme: ExtensionContext['ui']['theme']): string => {
+  const commandArgsToText = (args: unknown): string => {
+    if (Array.isArray(args)) return args.map(String).join(" ").trim();
+    if (typeof args === "string") return args.trim();
+    return "";
+  };
+
+  const formatTaskList = (state: TaskState): string => {
     const todo = state.tasks.filter((t) => !t.done);
     const done = state.tasks.filter((t) => t.done);
 
@@ -625,44 +738,44 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     // Show current goal
     if (state.currentGoal) {
       parts.push("");
-      parts.push(`  🎯 目标: ${state.currentGoal}`);
+      parts.push(`  🎯 ${t("goalLabel")} ${state.currentGoal}`);
     }
 
     if (state.tasks.length === 0) {
       parts.push("");
-      parts.push("  还没有任务。");
+      parts.push(t("noTasksYetFmt"));
       parts.push("");
-      parts.push("  💡 使用方法:");
-      parts.push("    /tasks <目标>          设置目标，AI 自动拆解任务");
-      parts.push("    /tasks                 查看当前状态");
-      parts.push("    /tasks help            查看所有命令");
+      parts.push(t("usageLabel"));
+      parts.push(t("cmdSetGoal"));
+      parts.push(t("cmdShowStatus"));
+      parts.push(t("cmdShowHelp"));
     } else {
       parts.push("");
 
       // Show pending tasks
       if (todo.length > 0) {
-        parts.push(`  📋 待完成 (${todo.length}):`);
+        parts.push(tf("pendingList", String(todo.length)));
         parts.push(...todo.map((t) => `    □ #${t.id} ${t.text}`));
       }
 
       // Show completed (limited)
       if (done.length > 0) {
-        parts.push(`  ✅ 已完成 (${done.length}):`);
+        parts.push(tf("completedList", String(done.length)));
         parts.push(...done.slice(0, 3).map((t) => `    ✓ #${t.id} ${t.text}`));
         if (done.length > 3) {
-          parts.push(`    ... 还有 ${done.length - 3} 个`);
+          parts.push(tf("moreCompleted", String(done.length - 3)));
         }
       }
 
       parts.push("");
-      parts.push("  💡 /tasks help 查看命令 | /tasks <目标> 设置目标");
+      parts.push(t("hintHelpGoal"));
     }
 
     return parts.join("\n");
   };
 
-  pi.registerCommand("tasks", {
-    description: "Show task status, set goal, or configure: /tasks [help|auto retry|limit|clear|<goal>]", 
+  pi.registerCommand("anchor", {
+    description: "Show task status, set goal, or configure: /anchor [help|auto retry|limit|clear|<goal>]", 
     
     // Dynamic argument completions
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
@@ -670,11 +783,11 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       
       // If no prefix, show all commands
       if (!prefix) {
-        return TASK_COMMANDS;
+        return ANCHOR_COMMANDS;
       }
       
       // Filter commands by prefix
-      const filtered = TASK_COMMANDS.filter(
+      const filtered = ANCHOR_COMMANDS.filter(
         (item) => 
           item.value.toLowerCase().startsWith(prefix) ||
           (item.description && item.description.toLowerCase().includes(prefix))
@@ -689,16 +802,22 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       return null;
     },
 
-    handler: async (args, ctx) => {
+    handler: async (args: unknown, ctx: ExtensionContext) => {
       const runtime = refreshRuntime(ctx);
       const { state } = runtime;
+      // Show widget when user explicitly invokes /anchor
+      state.showWidget = true;
+      if (!saveRuntime(ctx, runtime)) {
+        ctx.ui.notify(t("errSaveState"), "error");
+        return;
+      }
       updateTodoWidget(ctx, runtime);
       const argv = parseCommandArgs(args);
       const op = (argv[0] ?? "").toLowerCase();
 
       // No args - show status
       if (!op) {
-        ctx.ui.notify(formatTaskList(state, ctx.ui.theme), "info");
+        ctx.ui.notify(formatTaskList(state), "info");
         return;
       }
 
@@ -709,18 +828,18 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           [
             theme.fg("accent", "⚓ Task Commands"),
             "",
-            `  ${theme.fg("success", "/tasks <目标>")}        设置目标，AI 自动拆解为具体任务`,
-            `  ${theme.fg("success", "/tasks")}                 显示当前状态和任务列表`,
-            `  ${theme.fg("success", "/tasks help")}            显示此帮助`,
-            `  ${theme.fg("success", "/tasks auto retry on|off")}  开启/关闭自动重试`,
-            `  ${theme.fg("success", "/tasks limit <n>")}       设置最大重试次数`,
-            `  ${theme.fg("success", "/tasks clear")}           清除所有任务和目标`,
+            `  ${theme.fg("success", t("helpSetGoal"))}`,
+            `  ${theme.fg("success", t("helpShowStatus"))}`,
+            `  ${theme.fg("success", t("helpShowHelp"))}`,
+            `  ${theme.fg("success", t("helpAutoToggle"))}`,
+            `  ${theme.fg("success", t("helpLimit"))}`,
+            `  ${theme.fg("success", t("helpClear"))}`,
             "",
-            theme.fg("dim", "  工作流程:"),
-            theme.fg("dim", "  1. 用户设置目标: /tasks 实现用户登录功能"),
-            theme.fg("dim", "  2. AI 自动拆解成具体任务"),
-            theme.fg("dim", "  3. AI 逐步完成每个任务"),
-            theme.fg("dim", "  4. 空闲时自动提醒继续"),
+            theme.fg("dim", t("workflowLabel")),
+            theme.fg("dim", t("workflow1")),
+            theme.fg("dim", t("workflow2")),
+            theme.fg("dim", t("workflow3")),
+            theme.fg("dim", t("workflow4")),
           ].join("\n"),
           "info"
         );
@@ -728,17 +847,29 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       }
 
       // Auto-retry toggle
-      if (op === "auto" && (argv[1] ?? "").toLowerCase() === "retry") {
-        const value = (argv[2] ?? "").toLowerCase();
+      // Supports both "/anchor auto on|off" and "/anchor auto retry on|off"
+      if (op === "auto") {
+        let value = "";
+        if ((argv[1] ?? "").toLowerCase() === "retry") {
+          value = (argv[2] ?? "").toLowerCase();
+        } else if (argv[1]) {
+          value = argv[1].toLowerCase();
+        }
         if (!["on", "off"].includes(value)) {
-          ctx.ui.notify(`自动重试: ${state.autoResume ? "开启" : "关闭"}。用法: /tasks auto retry on|off`, "info");
+          ctx.ui.notify(tf("autoRetryStatus", state.autoResume ? t("on") : t("off")), "info");
           return;
         }
         state.autoResume = value === "on";
         runtime.autoResumeCount = 0;
-        saveRuntime(ctx, runtime);
+        if (!state.autoResume) {
+          cancelPending(runtime);
+        }
+        if (!saveRuntime(ctx, runtime)) {
+          ctx.ui.notify(t("errSaveState"), "error");
+          return;
+        }
         updateTodoWidget(ctx, runtime);
-        ctx.ui.notify(`自动重试${state.autoResume ? "已开启" : "已关闭"}`, "info");
+        ctx.ui.notify(state.autoResume ? t("autoRetryOn") : t("autoRetryOff"), "info");
         return;
       }
 
@@ -746,14 +877,17 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       if (op === "limit") {
         const limit = Number(argv[1]);
         if (!Number.isInteger(limit) || limit < 0) {
-          ctx.ui.notify("用法: /tasks limit <正整数>", "error");
+          ctx.ui.notify(t("limitUsage"), "error");
           return;
         }
         state.maxAutoResume = limit;
         runtime.autoResumeCount = 0;
-        saveRuntime(ctx, runtime);
+        if (!saveRuntime(ctx, runtime)) {
+          ctx.ui.notify(t("errSaveState"), "error");
+          return;
+        }
         updateTodoWidget(ctx, runtime);
-        ctx.ui.notify(`最大重试次数已设置为 ${limit}`, "info");
+        ctx.ui.notify(tf("limitSet", String(limit)), "info");
         return;
       }
 
@@ -764,41 +898,52 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
         state.nextId = 1;
         state.currentGoal = undefined;
         state.goalId = undefined;
+        state.showWidget = false;
         runtime.autoResumeCount = 0;
         cancelPending(runtime);
-        saveRuntime(ctx, runtime);
+        if (!saveRuntime(ctx, runtime)) {
+          ctx.ui.notify(t("errSaveState"), "error");
+          return;
+        }
         updateTodoWidget(ctx, runtime);
-        ctx.ui.notify(`已清除 ${count} 个任务和目标`, "info");
+        ctx.ui.notify(tf("clearedTasks", String(count)), "info");
         return;
       }
 
       // List/status aliases
       if (["list", "status", "ls"].includes(op)) {
-        ctx.ui.notify(formatTaskList(state, ctx.ui.theme), "info");
+        ctx.ui.notify(formatTaskList(state), "info");
         return;
       }
 
       // Treat anything else as a goal
-      const goalText = args.toString().trim();
+      const goalText = commandArgsToText(args);
       if (goalText) {
         state.currentGoal = goalText;
         state.goalId = generateGoalId();
-        saveRuntime(ctx, runtime);
+        state.tasks = [];
+        state.nextId = 1;
+        runtime.autoResumeCount = 0;
+        cancelPending(runtime);
+        if (!saveRuntime(ctx, runtime)) {
+          ctx.ui.notify(t("errSaveGoal"), "error");
+          return;
+        }
         updateTodoWidget(ctx, runtime);
         
         // Send a message to AI to decompose the goal
         const message = [
-          `🎯 用户设置了新目标: ${goalText}`,
+          `🎯 ${tf("newGoalSet", goalText)}`,
           "",
-          "请帮我将这个目标拆解成具体的、可执行的任务步骤。",
-          "要求:",
-          "1. 每个任务应该是具体、可执行的小步骤",
-          "2. 按照逻辑顺序排列",
-          "3. 使用 task tool 的 add 操作逐个添加",
-          "4. 添加完所有任务后，确认任务列表",
+          t("decomposeRequest"),
+          t("requirementsLabel"),
+          t("req1"),
+          t("req2"),
+          t("req3"),
+          t("req4"),
         ].join("\n");
         
-        ctx.ui.notify(`目标已设置: ${goalText}\n正在让 AI 拆解任务...`, "info");
+        ctx.ui.notify(tf("goalSetDecomposing", goalText), "info");
         
         // Send to AI for decomposition
         pi.sendUserMessage(message);
@@ -806,7 +951,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       }
 
       // Fallback
-      ctx.ui.notify("未知命令。试试 /tasks help", "error");
+      ctx.ui.notify(t("unknownCommand"), "error");
     },
   });
 }
