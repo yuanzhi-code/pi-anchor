@@ -25,21 +25,19 @@ pi install -l npm:pi-anchor
 ### 基本命令
 
 ```text
-/tasks <目标>           设置目标，AI 自动拆解任务
-/tasks                  查看当前状态和任务列表
-/tasks help             显示帮助
-/tasks goal             显示当前目标
-/tasks goal clear       清除当前目标
-/tasks auto on|off      开启/关闭自动续命
-/tasks limit <n>        设置最大自动重试次数
-/tasks clear            清除所有任务和目标
+/anchor <目标>           设置目标，AI 自动拆解任务
+/anchor                  查看当前状态和任务列表
+/anchor help             显示帮助
+/anchor auto on|off      开启/关闭自动续命（兼容 auto retry on|off）
+/anchor limit <n>        设置最大自动续命次数
+/anchor clear            清除所有任务和目标
 ```
 
 ### 工作流程
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  用户: /tasks 实现用户登录功能                               │
+│  用户: /anchor 实现用户登录功能                               │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -67,7 +65,7 @@ pi install -l npm:pi-anchor
 ### 查看状态
 
 ```
-用户: /tasks
+用户: /anchor
 
 显示:
   ⚓ Tasks · ⏳ 3/5 pending · auto on · retry 0/20
@@ -86,34 +84,35 @@ pi install -l npm:pi-anchor
 
 ### 命令自动补全
 
-输入 `/tasks` 后会显示可用命令的动态提示:
+输入 `/anchor` 后会显示可用命令的动态提示:
 
 ```
-> /tasks
+> /anchor
 ┌─────────────────────────────────────────┐
-│ /tasks <目标>   设置目标，AI 自动拆解   │
+│ /anchor <目标>   设置目标，AI 自动拆解   │
 │ help            显示帮助                │
 │ auto on         开启自动续命            │
 │ auto off        关闭自动续命            │
-│ limit <n>       设置最大重试次数        │
+│ limit <n>       设置最大续命次数        │
+│ list            显示任务列表            │
 │ clear           清除所有任务            │
-│ goal            显示当前目标            │
-│ goal clear      清除目标                │
 └─────────────────────────────────────────┘
 ```
 
 输入部分字符会自动过滤:
 ```
-> /tasks au
+> /anchor au
 ┌─────────────────────────────────────────┐
 │ auto on         开启自动续命            │
 │ auto off        关闭自动续命            │
+│ auto retry on   开启自动续命（完整写法）│
+│ auto retry off  关闭自动续命（完整写法）│
 └─────────────────────────────────────────┘
 ```
 
 输入其他内容会被视为目标:
 ```
-> /tasks 实现用户登录功能
+> /anchor 实现用户登录功能
 → 设置目标，触发 AI 拆解任务
 ```
 
@@ -183,8 +182,8 @@ pi -e /Users/yuanzhi/code/pi-task-persistence/extensions/index.ts
 
 | # | 操作 | 预期结果 |
 |---|------|----------|
-| 1 | 输入 `/tasks` | 显示状态和动态命令提示 |
-| 2 | 输入 `/tasks 实现登录功能` | 设置目标，显示"正在让 AI 拆解任务" |
+| 1 | 输入 `/anchor` | 显示状态和动态命令提示 |
+| 2 | 输入 `/anchor 实现登录功能` | 设置目标，显示"正在让 AI 拆解任务" |
 | 3 | 查看 TUI widget | 显示目标和任务列表 |
 | 4 | 观察 AI 行为 | AI 自动调用 task tool 添加任务 |
 | 5 | 等待 AI 完成 | 自动注入续命提醒 |
