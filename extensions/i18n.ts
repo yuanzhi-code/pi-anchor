@@ -6,6 +6,8 @@
  * before the extension loads.
  */
 
+declare const process: { env: Record<string, string | undefined> };
+
 export type Lang = "en" | "zh";
 
 let currentLang: Lang = (process.env.PI_ANCHOR_LANG as Lang) ?? "en";
@@ -19,7 +21,7 @@ export function getLang(): Lang {
 }
 
 export function t(key: keyof typeof translations): string {
-  return translations[key][currentLang];
+  return (translations[key] as Record<Lang, string>)[currentLang];
 }
 
 /** Simple template replacement: t("pendingCount", n.toString()) */
@@ -31,7 +33,7 @@ export function tf(key: keyof typeof translations, ...args: string[]): string {
   return text;
 }
 
-const translations = {
+const translations: Record<string, Record<Lang, string>> = {
   // Command completions
   cmdHelpDesc: { en: "Show available commands", zh: "显示可用命令" },
   cmdAutoOnDesc: { en: "Enable auto-retry", zh: "开启自动续命" },
@@ -124,4 +126,4 @@ const translations = {
 
   // Retry limit reached
   retryLimitReached: { en: "Task auto-retry limit reached ({0})", zh: "自动续命次数已达上限 ({0})" },
-} as const;
+};

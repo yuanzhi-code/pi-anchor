@@ -2,7 +2,9 @@
   "name": "pi-anchor",
   "version": "0.1.0",
   "description": "Anchor — keep AI anchored to tasks, on track, missing nothing, pushing through to completion",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "license": "MIT",
   "author": "",
   "type": "module",
@@ -33,7 +35,9 @@
     "prepublishOnly": "npm run build"
   },
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": [
+      "./extensions"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",
@@ -42,11 +46,12 @@
     "typebox": "*"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "vitest": "^2.0.0",
+    "@types/node": "^25.6.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
     "@vitest/coverage-v8": "^2.0.0",
     "eslint": "^9.0.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0"
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
   }
 }
