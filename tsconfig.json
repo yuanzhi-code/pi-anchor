@@ -16,6 +16,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "include": ["extensions/**/*.ts"],
+  "include": ["extensions/**/*.ts", "types/**/*.d.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }
