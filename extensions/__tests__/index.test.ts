@@ -109,23 +109,23 @@ describe('pi-anchor extension', () => {
       const parts: string[] = [];
 
       if (state.currentGoal) {
-        parts.push(`🎯 用户目标: ${state.currentGoal}`);
+        parts.push(`🎯 User Goal: ${state.currentGoal}`);
         parts.push('');
-        parts.push(`📋 分解的任务 (${undone.length}/${state.tasks.length} 未完成):`);
+        parts.push(`📋 Decomposed Tasks (${undone.length}/${state.tasks.length} pending):`);
       }
 
       parts.push(...undone.map(t => `- [ ] #${t.id}: ${t.text}`));
       parts.push('');
-      parts.push('请继续完成这些任务，不要停下来。');
+      parts.push(`${undone.length} task(s) remaining. Let's keep going.`);
 
       const message = parts.join('\n');
 
-      expect(message).toContain('🎯 用户目标: Build user auth system');
-      expect(message).toContain('📋 分解的任务 (2/3 未完成):');
+      expect(message).toContain('🎯 User Goal: Build user auth system');
+      expect(message).toContain('📋 Decomposed Tasks (2/3 pending):');
       expect(message).toContain('- [ ] #1: Create model');
       expect(message).toContain('- [ ] #2: Write tests');
       expect(message).not.toContain('Deploy app'); // Already done
-      expect(message).toContain('请继续完成这些任务，不要停下来。');
+      expect(message).toContain('2 task(s) remaining. Let\'s keep going.');
     });
 
     it('should build resume message without goal', () => {
@@ -145,21 +145,21 @@ describe('pi-anchor extension', () => {
       const parts: string[] = [];
 
       if (state.currentGoal) {
-        parts.push(`🎯 用户目标: ${state.currentGoal}`);
+        parts.push(`🎯 User Goal: ${state.currentGoal}`);
         parts.push('');
-        parts.push(`📋 分解的任务 (${undone.length}/${state.tasks.length} 未完成):`);
+        parts.push(`📋 Decomposed Tasks (${undone.length}/${state.tasks.length} pending):`);
       } else {
-        parts.push(`📋 剩余任务 (${undone.length}/${state.tasks.length}):`);
+        parts.push(`📋 Remaining Tasks (${undone.length}/${state.tasks.length}):`);
       }
 
       parts.push(...undone.map(t => `- [ ] #${t.id}: ${t.text}`));
       parts.push('');
-      parts.push('请继续完成这些任务，不要停下来。');
+      parts.push(`${undone.length} task(s) remaining. Let's keep going.`);
 
       const message = parts.join('\n');
 
       expect(message).not.toContain('🎯');
-      expect(message).toContain('📋 剩余任务 (2/2):');
+      expect(message).toContain('📋 Remaining Tasks (2/2):');
       expect(message).toContain('- [ ] #1: Task 1');
       expect(message).toContain('- [ ] #2: Task 2');
     });

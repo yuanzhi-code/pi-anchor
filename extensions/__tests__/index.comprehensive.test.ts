@@ -210,7 +210,7 @@ describe("pi-anchor extension comprehensive tests", () => {
 
       expect(api.pi.sendUserMessage).toHaveBeenCalledTimes(1);
       const msg = api.pi.sendUserMessage.mock.calls[0][0] as string;
-      expect(msg).toContain("🎯 用户目标: 实现 登录");
+      expect(msg).toContain("🎯 User Goal: 实现 登录");
       expect(msg).toContain("- [ ] #1: 设计接口");
       expect(msg).not.toContain("写测试");
     });
@@ -245,7 +245,7 @@ describe("pi-anchor extension comprehensive tests", () => {
       await taskTool.execute("1", { action: "add", text: "pending" }, undefined, undefined, ctx);
 
       await anchorCommand.handler("auto retry off", ctx);
-      expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("已关闭"), "info");
+      expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("disabled"), "info");
 
       await api.emit("agent_end", {}, ctx);
       await vi.advanceTimersByTimeAsync(1000);
@@ -260,10 +260,10 @@ describe("pi-anchor extension comprehensive tests", () => {
 
       await api.emit("session_start", {}, ctx);
       await anchorCommand.handler(["limit", "3"], ctx);
-      expect(ctx.ui.notify).toHaveBeenCalledWith("最大重试次数已设置为 3", "info");
+      expect(ctx.ui.notify).toHaveBeenCalledWith("Max retry limit set to 3", "info");
 
       await anchorCommand.handler(["实现", "支付", "流程"], ctx);
-      expect(api.pi.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("用户设置了新目标: 实现 支付 流程"));
+      expect(api.pi.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("New goal set by user: 实现 支付 流程"));
 
       const list = await taskTool.execute("1", { action: "list" }, undefined, undefined, ctx);
       expect(list.details.currentGoal).toBe("实现 支付 流程");
@@ -381,10 +381,10 @@ describe("pi-anchor extension comprehensive tests", () => {
 
       await api.emit("session_start", {}, ctx);
       await anchorCommand.handler(["limit", "-1"], ctx);
-      expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("非负整数"), "error");
+      expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("non-negative integer"), "error");
 
       await anchorCommand.handler(["limit", "abc"], ctx);
-      expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("非负整数"), "error");
+      expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("non-negative integer"), "error");
     });
 
     it("handles saveState write failures without throwing", async () => {
@@ -400,7 +400,7 @@ describe("pi-anchor extension comprehensive tests", () => {
       await api.emit("session_start", {}, ctx);
       const result = await taskTool.execute("1", { action: "add", text: "safe-add" }, undefined, undefined, ctx);
 
-      expect(result.content[0].text).toContain("错误：保存任务状态失败");
+      expect(result.content[0].text).toContain("Error: failed to save task state");
       expect(result.details.error).toBe("save failed");
       expect(errorSpy).toHaveBeenCalledWith("[anchor] failed to save state:", expect.any(Error));
 

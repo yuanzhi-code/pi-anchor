@@ -18,6 +18,7 @@ import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { t, tf } from "./i18n";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,14 +78,14 @@ const TASK_SUBDIR = "tasks";
 
 /** Command completions for /anchor */
 const ANCHOR_COMMANDS: AutocompleteItem[] = [
-  { value: "help", description: "显示可用命令" },
-  { value: "auto on", description: "开启自动续命" },
-  { value: "auto off", description: "关闭自动续命" },
-  { value: "auto retry on", description: "开启自动续命（完整写法）" },
-  { value: "auto retry off", description: "关闭自动续命（完整写法）" },
-  { value: "limit", description: "设置最大自动续命次数，如 limit 20" },
-  { value: "list", description: "显示当前任务列表" },
-  { value: "clear", description: "清除所有任务和目标" },
+  { value: "help", description: t("cmdHelpDesc") },
+  { value: "auto on", description: t("cmdAutoOnDesc") },
+  { value: "auto off", description: t("cmdAutoOffDesc") },
+  { value: "auto retry on", description: t("cmdAutoRetryOnDesc") },
+  { value: "auto retry off", description: t("cmdAutoRetryOffDesc") },
+  { value: "limit", description: t("cmdLimitDesc") },
+  { value: "list", description: t("cmdListDesc") },
+  { value: "clear", description: t("cmdClearDesc") },
 ];
 
 // ---------------------------------------------------------------------------
@@ -191,16 +192,16 @@ function buildResumeMessage(state: TaskState): string {
 
   // Show user's original goal
   if (state.currentGoal) {
-    parts.push(`🎯 用户目标: ${state.currentGoal}`);
+    parts.push(`🎯 ${t("userGoal")}: ${state.currentGoal}`);
     parts.push("");
-    parts.push(`📋 分解的任务 (${undone.length}/${state.tasks.length} 未完成):`);
+    parts.push(`📋 ${t("decomposedTasks")} (${undone.length}/${state.tasks.length} ${t("pendingLabel")}):`);
   } else {
-    parts.push(`📋 剩余任务 (${undone.length}/${state.tasks.length}):`);
+    parts.push(`📋 ${t("remainingTasks")} (${undone.length}/${state.tasks.length}):`);
   }
 
   parts.push(...undone.map((t) => `- [ ] #${t.id}: ${t.text}`));
   parts.push("");
-  parts.push(`还有 ${undone.length} 个任务待完成，让我们继续推进。`);
+  parts.push(tf("pendingCount", String(undone.length)));
 
   return parts.join("\n");
 }
@@ -286,7 +287,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       retryText,
     ].join(" · ");
 
-    const helpHint = theme.fg("dim", "  💡 ") + theme.fg("accent", "/anchor <目标>") + theme.fg("dim", " 设置目标 | ") + theme.fg("accent", "/anchor help");
+    const helpHint = theme.fg("dim", "  💡 ") + theme.fg("accent", t("setGoalHint")) + theme.fg("dim", t("setGoalPipe")) + theme.fg("accent", "/anchor help");
 
     // Show current goal if exists
     const goalLine = state.currentGoal
@@ -294,7 +295,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       : [];
 
     if (state.tasks.length === 0) {
-      ctx.ui.setWidget("pi-anchor", [header, ...goalLine, theme.fg("dim", "  暂无任务"), "", helpHint]);
+      ctx.ui.setWidget("pi-anchor", [header, ...goalLine, theme.fg("dim", t("noTasksWidget")), "", helpHint]);
       return;
     }
 
@@ -305,7 +306,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       return theme.fg("text", `  □ #${t.id} ${t.text}`);
     });
     const extra = state.tasks.length > visible.length
-      ? [theme.fg("dim", `  … 还有 ${state.tasks.length - visible.length} 个`)]
+      ? [theme.fg("dim", tf("moreTasks", String(state.tasks.length - visible.length)))]
       : [];
     ctx.ui.setWidget("pi-anchor", [header, ...goalLine, ...lines, ...extra, "", helpHint]);
   };
@@ -468,7 +469,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
             parts.push("Tasks:");
             parts.push(...state.tasks.map((t) => `[${t.done ? "x" : " "}] #${t.id}: ${t.text}`));
           } else {
-            parts.push("暂无任务。");
+            parts.push(t("noTasksYet"));
           }
           
           parts.push("");
@@ -488,7 +489,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
         case "add": {
           if (!params.text) {
             return {
-              content: [{ type: "text", text: "错误：添加任务需要提供 text 参数" }],
+              content: [{ type: "text", text: t("errAddTextRequired") }],
               details: {
                 action: "add",
                 tasks: [...state.tasks],
@@ -507,7 +508,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           state.tasks.push(task);
           if (!saveRuntime(ctx, runtime)) {
             return {
-              content: [{ type: "text", text: "错误：保存任务状态失败" }],
+              content: [{ type: "text", text: t("errSaveTaskState") }],
               details: {
                 action: "add",
                 tasks: [...state.tasks],
@@ -533,7 +534,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           if (params.id === undefined) {
             return {
               content: [
-                { type: "text", text: "错误：切换任务状态需要提供 id 参数" },
+                { type: "text", text: t("errToggleIdRequired") },
               ],
               details: {
                 action: "toggle",
@@ -549,7 +550,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
               content: [
                 {
                   type: "text",
-                  text: `未找到任务 #${params.id}`,
+                  text: tf("errTaskNotFound", String(params.id)),
                 },
               ],
               details: {
@@ -563,7 +564,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           task.done = !task.done;
           if (!saveRuntime(ctx, runtime)) {
             return {
-              content: [{ type: "text", text: "错误：保存任务状态失败" }],
+              content: [{ type: "text", text: t("errSaveTaskState") }],
               details: {
                 action: "toggle",
                 tasks: [...state.tasks],
@@ -592,7 +593,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           if (params.id === undefined) {
             return {
               content: [
-                { type: "text", text: "错误：删除任务需要提供 id 参数" },
+                { type: "text", text: t("errDeleteIdRequired") },
               ],
               details: {
                 action: "delete",
@@ -608,7 +609,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
               content: [
                 {
                   type: "text",
-                  text: `未找到任务 #${params.id}`,
+                  text: tf("errTaskNotFound", String(params.id)),
                 },
               ],
               details: {
@@ -622,7 +623,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           const [removed] = state.tasks.splice(index, 1);
           if (!saveRuntime(ctx, runtime)) {
             return {
-              content: [{ type: "text", text: "错误：保存任务状态失败" }],
+              content: [{ type: "text", text: t("errSaveTaskState") }],
               details: {
                 action: "delete",
                 tasks: [...state.tasks],
@@ -655,7 +656,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           state.showWidget = false;
           if (!saveRuntime(ctx, runtime)) {
             return {
-              content: [{ type: "text", text: "错误：保存任务状态失败" }],
+              content: [{ type: "text", text: t("errSaveTaskState") }],
               details: {
                 action: "clear",
                 tasks: [],
@@ -737,37 +738,37 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     // Show current goal
     if (state.currentGoal) {
       parts.push("");
-      parts.push(`  🎯 目标: ${state.currentGoal}`);
+      parts.push(`  🎯 ${t("goalLabel")} ${state.currentGoal}`);
     }
 
     if (state.tasks.length === 0) {
       parts.push("");
-      parts.push("  还没有任务。");
+      parts.push(t("noTasksYetFmt"));
       parts.push("");
-      parts.push("  💡 使用方法:");
-      parts.push("    /anchor <目标>          设置目标，AI 自动拆解任务");
-      parts.push("    /anchor                 查看当前状态");
-      parts.push("    /anchor help            查看所有命令");
+      parts.push(t("usageLabel"));
+      parts.push(t("cmdSetGoal"));
+      parts.push(t("cmdShowStatus"));
+      parts.push(t("cmdShowHelp"));
     } else {
       parts.push("");
 
       // Show pending tasks
       if (todo.length > 0) {
-        parts.push(`  📋 待完成 (${todo.length}):`);
+        parts.push(tf("pendingList", String(todo.length)));
         parts.push(...todo.map((t) => `    □ #${t.id} ${t.text}`));
       }
 
       // Show completed (limited)
       if (done.length > 0) {
-        parts.push(`  ✅ 已完成 (${done.length}):`);
+        parts.push(tf("completedList", String(done.length)));
         parts.push(...done.slice(0, 3).map((t) => `    ✓ #${t.id} ${t.text}`));
         if (done.length > 3) {
-          parts.push(`    ... 还有 ${done.length - 3} 个`);
+          parts.push(tf("moreCompleted", String(done.length - 3)));
         }
       }
 
       parts.push("");
-      parts.push("  💡 /anchor help 查看命令 | /anchor <目标> 设置目标");
+      parts.push(t("hintHelpGoal"));
     }
 
     return parts.join("\n");
@@ -807,7 +808,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       // Show widget when user explicitly invokes /anchor
       state.showWidget = true;
       if (!saveRuntime(ctx, runtime)) {
-        ctx.ui.notify("错误：保存状态失败", "error");
+        ctx.ui.notify(t("errSaveState"), "error");
         return;
       }
       updateTodoWidget(ctx, runtime);
@@ -827,18 +828,18 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           [
             theme.fg("accent", "⚓ Task Commands"),
             "",
-            `  ${theme.fg("success", "/anchor <目标>")}        设置目标，AI 自动拆解为具体任务`,
-            `  ${theme.fg("success", "/anchor")}                 显示当前状态和任务列表`,
-            `  ${theme.fg("success", "/anchor help")}            显示此帮助`,
-            `  ${theme.fg("success", "/anchor auto on|off")}         开启/关闭自动续命（兼容 auto retry on|off）`,
-            `  ${theme.fg("success", "/anchor limit <n>")}       设置最大重试次数`,
-            `  ${theme.fg("success", "/anchor clear")}           清除所有任务和目标`,
+            `  ${theme.fg("success", t("helpSetGoal"))}`,
+            `  ${theme.fg("success", t("helpShowStatus"))}`,
+            `  ${theme.fg("success", t("helpShowHelp"))}`,
+            `  ${theme.fg("success", t("helpAutoToggle"))}`,
+            `  ${theme.fg("success", t("helpLimit"))}`,
+            `  ${theme.fg("success", t("helpClear"))}`,
             "",
-            theme.fg("dim", "  工作流程:"),
-            theme.fg("dim", "  1. 用户设置目标: /anchor 实现用户登录功能"),
-            theme.fg("dim", "  2. AI 自动拆解成具体任务"),
-            theme.fg("dim", "  3. AI 逐步完成每个任务"),
-            theme.fg("dim", "  4. 空闲时自动提醒继续"),
+            theme.fg("dim", t("workflowLabel")),
+            theme.fg("dim", t("workflow1")),
+            theme.fg("dim", t("workflow2")),
+            theme.fg("dim", t("workflow3")),
+            theme.fg("dim", t("workflow4")),
           ].join("\n"),
           "info"
         );
@@ -855,7 +856,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           value = argv[1].toLowerCase();
         }
         if (!["on", "off"].includes(value)) {
-          ctx.ui.notify(`自动续命: ${state.autoResume ? "开启" : "关闭"}。用法: /anchor auto on|off（或 auto retry on|off）`, "info");
+          ctx.ui.notify(tf("autoRetryStatus", state.autoResume ? t("on") : t("off")), "info");
           return;
         }
         state.autoResume = value === "on";
@@ -864,11 +865,11 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           cancelPending(runtime);
         }
         if (!saveRuntime(ctx, runtime)) {
-          ctx.ui.notify("错误：保存状态失败", "error");
+          ctx.ui.notify(t("errSaveState"), "error");
           return;
         }
         updateTodoWidget(ctx, runtime);
-        ctx.ui.notify(`自动重试${state.autoResume ? "已开启" : "已关闭"}`, "info");
+        ctx.ui.notify(state.autoResume ? t("autoRetryOn") : t("autoRetryOff"), "info");
         return;
       }
 
@@ -876,17 +877,17 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       if (op === "limit") {
         const limit = Number(argv[1]);
         if (!Number.isInteger(limit) || limit < 0) {
-          ctx.ui.notify("用法: /anchor limit <非负整数>", "error");
+          ctx.ui.notify(t("limitUsage"), "error");
           return;
         }
         state.maxAutoResume = limit;
         runtime.autoResumeCount = 0;
         if (!saveRuntime(ctx, runtime)) {
-          ctx.ui.notify("错误：保存状态失败", "error");
+          ctx.ui.notify(t("errSaveState"), "error");
           return;
         }
         updateTodoWidget(ctx, runtime);
-        ctx.ui.notify(`最大重试次数已设置为 ${limit}`, "info");
+        ctx.ui.notify(tf("limitSet", String(limit)), "info");
         return;
       }
 
@@ -901,11 +902,11 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
         runtime.autoResumeCount = 0;
         cancelPending(runtime);
         if (!saveRuntime(ctx, runtime)) {
-          ctx.ui.notify("错误：保存状态失败", "error");
+          ctx.ui.notify(t("errSaveState"), "error");
           return;
         }
         updateTodoWidget(ctx, runtime);
-        ctx.ui.notify(`已清除 ${count} 个任务和目标`, "info");
+        ctx.ui.notify(tf("clearedTasks", String(count)), "info");
         return;
       }
 
@@ -925,24 +926,24 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
         runtime.autoResumeCount = 0;
         cancelPending(runtime);
         if (!saveRuntime(ctx, runtime)) {
-          ctx.ui.notify("错误：保存新目标失败", "error");
+          ctx.ui.notify(t("errSaveGoal"), "error");
           return;
         }
         updateTodoWidget(ctx, runtime);
         
         // Send a message to AI to decompose the goal
         const message = [
-          `🎯 用户设置了新目标: ${goalText}`,
+          `🎯 ${tf("newGoalSet", goalText)}`,
           "",
-          "请帮我将这个目标拆解成具体的、可执行的任务步骤。",
-          "要求:",
-          "1. 每个任务应该是具体、可执行的小步骤",
-          "2. 按照逻辑顺序排列",
-          "3. 使用 task tool 的 add 操作逐个添加",
-          "4. 添加完所有任务后，确认任务列表",
+          t("decomposeRequest"),
+          t("requirementsLabel"),
+          t("req1"),
+          t("req2"),
+          t("req3"),
+          t("req4"),
         ].join("\n");
         
-        ctx.ui.notify(`目标已设置: ${goalText}\n正在让 AI 拆解任务...`, "info");
+        ctx.ui.notify(tf("goalSetDecomposing", goalText), "info");
         
         // Send to AI for decomposition
         pi.sendUserMessage(message);
@@ -950,7 +951,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       }
 
       // Fallback
-      ctx.ui.notify("未知命令。试试 /anchor help", "error");
+      ctx.ui.notify(t("unknownCommand"), "error");
     },
   });
 }
