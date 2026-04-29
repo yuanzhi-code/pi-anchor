@@ -26,10 +26,13 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Run type checking
         run: npm run typecheck
+
+      - name: Run linter
+        run: npm run lint
 
       - name: Run tests
         run: npm test
@@ -50,7 +53,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build package
         run: npm run build
@@ -85,7 +88,7 @@ jobs:
           path: dist/
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Verify package contents
         run: npm pack --dry-run
@@ -139,7 +142,7 @@ jobs:
             ## Installation
             
             ```bash
-            npm install pi-anchor
+            pi install npm:pi-anchor
             ```
           draft: false
           prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}

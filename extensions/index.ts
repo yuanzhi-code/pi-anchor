@@ -18,7 +18,7 @@ import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { t, tf } from "./i18n";
+import { t, tf } from "./i18n.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,7 +64,6 @@ interface Runtime {
   state: TaskState;
   autoResumeCount: number;
   pendingTimer: ReturnType<typeof setTimeout> | null;
-  pendingMessage: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +74,8 @@ const DEFAULT_MAX_AUTO_RESUME = 20;
 const RESUME_DELAY_MS = 800;
 const TASK_DIR = ".pi";
 const TASK_SUBDIR = "tasks";
+const MAX_TASK_TEXT_LENGTH = 10000;
+const MAX_GOAL_TEXT_LENGTH = 5000;
 
 /** Command completions for /anchor */
 const ANCHOR_COMMANDS: AutocompleteItem[] = [
@@ -92,8 +93,22 @@ const ANCHOR_COMMANDS: AutocompleteItem[] = [
 // File I/O
 // ---------------------------------------------------------------------------
 
+/**
+ * Sanitize session key for use as filename.
+ * Uses a hash suffix when unsafe characters are present to prevent collisions
+ * between distinct session IDs (e.g. "a/b" vs "a?b").
+ */
 function safeSessionKey(sessionKey: string): string {
-  return sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const sanitized = sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_");
+  if (sanitized === sessionKey) return sanitized;
+  // Add hash suffix to prevent collisions between different session IDs
+  let hash = 0;
+  for (let i = 0; i < sessionKey.length; i++) {
+    const char = sessionKey.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return `${sanitized}_${Math.abs(hash).toString(36)}`;
 }
 
 function taskFilePath(cwd: string, sessionKey: string): string {
@@ -119,7 +134,7 @@ function sanitizeTask(value: unknown): Task | null {
   if (!isRecord(value)) return null;
 
   const { id, text, done, createdAt, goalId } = value;
-  if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return null;
+  if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) return null;
   if (typeof text !== "string") return null;
   if (typeof done !== "boolean") return null;
 
@@ -127,50 +142,79 @@ function sanitizeTask(value: unknown): Task | null {
     id,
     text,
     done,
-    createdAt: typeof createdAt === "number" ? createdAt : Date.now(),
+    createdAt: typeof createdAt === "number" && Number.isFinite(createdAt) ? createdAt : Date.now(),
     goalId: typeof goalId === "string" ? goalId : undefined,
   };
 }
 
-function loadState(cwd: string, sessionKey: string): TaskState {
+function defaultTaskState(): TaskState {
+  return { tasks: [], nextId: 1, autoResume: true, maxAutoResume: DEFAULT_MAX_AUTO_RESUME, showWidget: false };
+}
+
+interface LoadResult {
+  state: TaskState;
+  /** true if file existed but could not be parsed/read */
+  fileCorrupted: boolean;
+}
+
+function loadState(cwd: string, sessionKey: string): LoadResult {
   const file = taskFilePath(cwd, sessionKey);
   try {
     if (fs.existsSync(file)) {
       const data: unknown = JSON.parse(fs.readFileSync(file, "utf-8"));
       if (isRecord(data) && Array.isArray(data.tasks)) {
         const tasks = data.tasks.map(sanitizeTask).filter((t): t is Task => t !== null);
-        const maxTaskId = tasks.reduce((max, task) => Math.max(max, task.id), 0);
+        // Deduplicate tasks by ID, keeping the first occurrence
+        const seen = new Set<number>();
+        const deduped = tasks.filter((task) => {
+          if (seen.has(task.id)) return false;
+          seen.add(task.id);
+          return true;
+        });
+        const maxTaskId = deduped.reduce((max, task) => Math.max(max, task.id), 0);
         const storedNextId = data.nextId;
         const storedMaxAutoResume = data.maxAutoResume;
-        const nextId = typeof storedNextId === "number" && Number.isInteger(storedNextId) && storedNextId > maxTaskId
+        const nextId = typeof storedNextId === "number" && Number.isSafeInteger(storedNextId) && storedNextId > maxTaskId
           ? storedNextId
           : maxTaskId + 1;
-        const maxAutoResume = typeof storedMaxAutoResume === "number" && Number.isInteger(storedMaxAutoResume) && storedMaxAutoResume >= 0
+        const maxAutoResume = typeof storedMaxAutoResume === "number" && Number.isSafeInteger(storedMaxAutoResume) && storedMaxAutoResume >= 0
           ? storedMaxAutoResume
           : DEFAULT_MAX_AUTO_RESUME;
 
         return {
-          tasks,
-          nextId,
-          autoResume: typeof data.autoResume === "boolean" ? data.autoResume : true,
-          maxAutoResume,
-          currentGoal: typeof data.currentGoal === "string" && data.currentGoal ? data.currentGoal : undefined,
-          goalId: typeof data.goalId === "string" && data.goalId ? data.goalId : undefined,
-          showWidget: typeof data.showWidget === "boolean" ? data.showWidget : false,
+          state: {
+            tasks: deduped,
+            nextId,
+            autoResume: typeof data.autoResume === "boolean" ? data.autoResume : true,
+            maxAutoResume,
+            currentGoal: typeof data.currentGoal === "string" && data.currentGoal ? data.currentGoal : undefined,
+            goalId: typeof data.goalId === "string" && data.goalId ? data.goalId : undefined,
+            showWidget: typeof data.showWidget === "boolean" ? data.showWidget : false,
+          },
+          fileCorrupted: false,
         };
       }
+      // File exists but has invalid structure
+      return { state: defaultTaskState(), fileCorrupted: true };
     }
+    // File doesn't exist - normal for new sessions
+    return { state: defaultTaskState(), fileCorrupted: false };
   } catch {
-    // ignore corrupted file
+    // File exists but is corrupted
+    return { state: defaultTaskState(), fileCorrupted: true };
   }
-  return { tasks: [], nextId: 1, autoResume: true, maxAutoResume: DEFAULT_MAX_AUTO_RESUME, showWidget: false };
 }
 
+/**
+ * Save state atomically using a unique temp file to prevent conflicts
+ * with concurrent writers.
+ */
 function saveState(cwd: string, sessionKey: string, state: TaskState): boolean {
   try {
     ensureTaskDir(cwd);
     const file = taskFilePath(cwd, sessionKey);
-    const tmpFile = file + ".tmp";
+    // Use unique temp file to prevent concurrent writer conflicts
+    const tmpFile = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
     fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2));
     fs.renameSync(tmpFile, file);
     return true;
@@ -212,11 +256,41 @@ function hasUndoneTasks(state: TaskState): boolean {
 
 function createRuntime(): Runtime {
   return {
-    state: { tasks: [], nextId: 1, autoResume: true, maxAutoResume: DEFAULT_MAX_AUTO_RESUME, showWidget: false },
+    state: defaultTaskState(),
     autoResumeCount: 0,
     pendingTimer: null,
-    pendingMessage: null,
   };
+}
+
+/**
+ * Execute a state mutation with automatic rollback on save failure.
+ * Takes a snapshot before mutation and restores it if the save fails.
+ */
+function withStateRollback(
+  runtime: Runtime,
+  ctx: ExtensionContext,
+  saveRuntime: (ctx: ExtensionContext, runtime: Runtime) => boolean,
+  mutation: () => void,
+): boolean {
+  const snapshot: TaskState = JSON.parse(JSON.stringify(runtime.state));
+  mutation();
+  if (!saveRuntime(ctx, runtime)) {
+    runtime.state = snapshot;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Trim and validate task/goal text.
+ * Returns the trimmed text, or null if the text is empty/blank.
+ */
+function sanitizeText(text: string | undefined, maxLength: number): string | null {
+  if (typeof text !== "string") return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > maxLength) return trimmed.slice(0, maxLength);
+  return trimmed;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,14 +319,15 @@ function createRuntimeStore() {
 // Extension
 // ---------------------------------------------------------------------------
 
-export default function taskPersistenceExtension(pi: ExtensionAPI) {
+export default function taskPersistenceExtension(pi: ExtensionAPI): void {
   const runtimeStore = createRuntimeStore();
   const getSessionKey = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
   const getRuntime = (ctx: ExtensionContext): Runtime => runtimeStore.ensure(getSessionKey(ctx));
 
   const refreshRuntime = (ctx: ExtensionContext): Runtime => {
     const runtime = getRuntime(ctx);
-    runtime.state = loadState(ctx.cwd, getSessionKey(ctx));
+    const { state } = loadState(ctx.cwd, getSessionKey(ctx));
+    runtime.state = state;
     return runtime;
   };
 
@@ -272,16 +347,18 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     const todo = state.tasks.filter((t) => !t.done);
     const done = state.tasks.filter((t) => t.done);
     const activeTask = todo[0];
-    const autoText = state.autoResume ? theme.fg("success", "auto retry on") : theme.fg("warning", "auto retry off");
+    const autoText = state.autoResume
+      ? theme.fg("success", t("autoRetryOnWidget"))
+      : theme.fg("warning", t("autoRetryOffWidget"));
     const retryText = runtime.autoResumeCount > 0
-      ? theme.fg("warning", `retry ${runtime.autoResumeCount}/${state.maxAutoResume}`)
-      : theme.fg("dim", `retry 0/${state.maxAutoResume}`);
+      ? theme.fg("warning", tf("retryCount", String(runtime.autoResumeCount), String(state.maxAutoResume)))
+      : theme.fg("dim", tf("retryCount", "0", String(state.maxAutoResume)));
     const statusText = todo.length === 0
-      ? theme.fg("success", `${done.length}/${state.tasks.length} done`)
-      : theme.fg("warning", `${done.length}/${state.tasks.length} pending`);
+      ? theme.fg("success", tf("statusDone", String(done.length), String(state.tasks.length)))
+      : theme.fg("warning", tf("statusPending", String(done.length), String(state.tasks.length)));
     
     const header = [
-      theme.fg("accent", "⚓ Tasks"),
+      theme.fg("accent", t("anchorTasksHeader")),
       statusText,
       autoText,
       retryText,
@@ -316,7 +393,6 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     if (runtime.pendingTimer) {
       clearTimeout(runtime.pendingTimer);
       runtime.pendingTimer = null;
-      runtime.pendingMessage = null;
     }
   };
 
@@ -325,7 +401,9 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     cancelPending(runtime);
     runtime.pendingTimer = setTimeout(() => {
       runtime.pendingTimer = null;
-      runtime.pendingMessage = null;
+
+      // Reload state from disk to avoid stale data
+      refreshRuntime(ctx);
 
       // Double-check the current state before injecting a follow-up.
       if (!runtime.state.autoResume) return;
@@ -333,7 +411,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
       if (!ctx.isIdle() || ctx.hasPendingMessages()) return;
 
       if (runtime.autoResumeCount >= runtime.state.maxAutoResume) {
-        ctx.ui.notify(`Task auto-retry limit reached (${runtime.state.maxAutoResume})`, "info");
+        ctx.ui.notify(tf("retryLimitReached", String(runtime.state.maxAutoResume)), "info");
         return;
       }
 
@@ -351,11 +429,17 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
   // -----------------------------------------------------------------------
 
   pi.on("session_start", async (_event: unknown, ctx: ExtensionContext) => {
-    const runtime = refreshRuntime(ctx);
+    const runtime = getRuntime(ctx);
+    const { state, fileCorrupted } = loadState(ctx.cwd, getSessionKey(ctx));
+    runtime.state = state;
     runtime.autoResumeCount = 0;
     cancelPending(runtime);
     runtime.state.showWidget = false;
-    saveRuntime(ctx, runtime);
+    // Only save if the file was valid or doesn't exist
+    // Don't overwrite a corrupted file with empty state
+    if (!fileCorrupted) {
+      saveRuntime(ctx, runtime);
+    }
     updateTodoWidget(ctx, runtime);
   });
 
@@ -466,14 +550,14 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           }
           
           if (state.tasks.length > 0) {
-            parts.push("Tasks:");
+            parts.push(t("tasksLabel"));
             parts.push(...state.tasks.map((t) => `[${t.done ? "x" : " "}] #${t.id}: ${t.text}`));
           } else {
             parts.push(t("noTasksYet"));
           }
           
           parts.push("");
-          parts.push(`(${undone}/${state.tasks.length} pending)`);
+          parts.push(`(${undone}/${state.tasks.length} ${t("pendingLabel")})`);
 
           return {
             content: [{ type: "text", text: parts.join("\n") }],
@@ -487,7 +571,8 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
         }
 
         case "add": {
-          if (!params.text) {
+          const cleanText = sanitizeText(params.text, MAX_TASK_TEXT_LENGTH);
+          if (!cleanText) {
             return {
               content: [{ type: "text", text: t("errAddTextRequired") }],
               details: {
@@ -499,14 +584,17 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
             };
           }
           const task: Task = {
-            id: state.nextId++,
-            text: params.text,
+            id: state.nextId,
+            text: cleanText,
             done: false,
             createdAt: Date.now(),
-            goalId: state.goalId, // Associate with current goal if exists
+            goalId: state.goalId,
           };
-          state.tasks.push(task);
-          if (!saveRuntime(ctx, runtime)) {
+          const saved = withStateRollback(runtime, ctx, saveRuntime, () => {
+            state.tasks.push(task);
+            state.nextId++;
+          });
+          if (!saved) {
             return {
               content: [{ type: "text", text: t("errSaveTaskState") }],
               details: {
@@ -520,7 +608,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           updateTodoWidget(ctx, runtime);
           return {
             content: [
-              { type: "text", text: `Added task #${task.id}: ${task.text}` },
+              { type: "text", text: tf("addedTask", String(task.id), task.text) },
             ],
             details: {
               action: "add",
@@ -561,8 +649,11 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
               } as TaskDetails,
             };
           }
-          task.done = !task.done;
-          if (!saveRuntime(ctx, runtime)) {
+          const wasDone = task.done;
+          const saved = withStateRollback(runtime, ctx, saveRuntime, () => {
+            task.done = !task.done;
+          });
+          if (!saved) {
             return {
               content: [{ type: "text", text: t("errSaveTaskState") }],
               details: {
@@ -578,7 +669,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
             content: [
               {
                 type: "text",
-                text: `Task #${task.id} ${task.done ? "completed" : "reopened"}`,
+                text: wasDone ? tf("taskReopened", String(task.id)) : tf("taskCompleted", String(task.id)),
               },
             ],
             details: {
@@ -620,8 +711,11 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
               } as TaskDetails,
             };
           }
-          const [removed] = state.tasks.splice(index, 1);
-          if (!saveRuntime(ctx, runtime)) {
+          const removed = state.tasks[index];
+          const saved = withStateRollback(runtime, ctx, saveRuntime, () => {
+            state.tasks.splice(index, 1);
+          });
+          if (!saved) {
             return {
               content: [{ type: "text", text: t("errSaveTaskState") }],
               details: {
@@ -635,7 +729,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
           updateTodoWidget(ctx, runtime);
           return {
             content: [
-              { type: "text", text: `Deleted task #${removed.id}: ${removed.text}` },
+              { type: "text", text: tf("deletedTask", String(removed.id), removed.text) },
             ],
             details: {
               action: "delete",
@@ -647,29 +741,30 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
 
         case "clear": {
           const count = state.tasks.length;
-          state.tasks = [];
-          state.nextId = 1;
-          state.currentGoal = undefined;
-          state.goalId = undefined;
-          runtime.autoResumeCount = 0;
-          cancelPending(runtime);
-          state.showWidget = false;
-          if (!saveRuntime(ctx, runtime)) {
+          const saved = withStateRollback(runtime, ctx, saveRuntime, () => {
+            state.tasks = [];
+            state.nextId = 1;
+            state.currentGoal = undefined;
+            state.goalId = undefined;
+            state.showWidget = false;
+          });
+          if (!saved) {
             return {
               content: [{ type: "text", text: t("errSaveTaskState") }],
               details: {
                 action: "clear",
-                tasks: [],
-                nextId: 1,
-                currentGoal: undefined,
+                tasks: [...state.tasks],
+                nextId: state.nextId,
                 error: "save failed",
               } as TaskDetails,
             };
           }
+          runtime.autoResumeCount = 0;
+          cancelPending(runtime);
           updateTodoWidget(ctx, runtime);
           return {
             content: [
-              { type: "text", text: `Cleared ${count} tasks and goal` },
+              { type: "text", text: tf("clearedTasksTool", String(count)) },
             ],
             details: {
               action: "clear",
@@ -685,7 +780,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
             content: [
               {
                 type: "text",
-                text: `Unknown action: ${params.action}`,
+                text: tf("unknownAction", String(params.action)),
               },
             ],
             details: {
@@ -719,18 +814,17 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
     const todo = state.tasks.filter((t) => !t.done);
     const done = state.tasks.filter((t) => t.done);
 
-    // Return plain text - notify() wraps with its own color
     const statusText = todo.length === 0
-      ? `✓ ${done.length}/${state.tasks.length} done`
-      : `⏳ ${todo.length}/${state.tasks.length} pending`;
+      ? tf("formatStatusDone", String(done.length), String(state.tasks.length))
+      : tf("formatStatusPending", String(todo.length), String(state.tasks.length));
 
-    const autoText = state.autoResume ? "auto retry on" : "auto retry off";
+    const autoText = state.autoResume ? t("formatAutoRetryOn") : t("formatAutoRetryOff");
 
     const header = [
-      "⚓ Tasks",
+      t("anchorTasksHeader"),
       statusText,
       autoText,
-      `limit: ${state.maxAutoResume}`,
+      tf("formatLimit", String(state.maxAutoResume)),
     ].join(" · ");
 
     const parts: string[] = [header];
@@ -821,12 +915,12 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
         return;
       }
 
-      // Help
+      // Help (match with or without extra args)
       if (["help", "-h", "--help"].includes(op)) {
         const theme = ctx.ui.theme;
         ctx.ui.notify(
           [
-            theme.fg("accent", "⚓ Task Commands"),
+            theme.fg("accent", t("anchorTaskCommands")),
             "",
             `  ${theme.fg("success", t("helpSetGoal"))}`,
             `  ${theme.fg("success", t("helpShowStatus"))}`,
@@ -873,7 +967,7 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
         return;
       }
 
-      // Limit
+      // Limit (require "limit <number>" format)
       if (op === "limit") {
         const limit = Number(argv[1]);
         if (!Number.isInteger(limit) || limit < 0) {
@@ -891,8 +985,9 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
         return;
       }
 
-      // Clear all
-      if (op === "clear") {
+      // Clear all - only match as command when it's the exact word "clear" with no extra args
+      // This prevents "/anchor clear failing tests" from clearing tasks instead of setting a goal
+      if (op === "clear" && argv.length === 1) {
         const count = state.tasks.length;
         state.tasks = [];
         state.nextId = 1;
@@ -910,14 +1005,14 @@ export default function taskPersistenceExtension(pi: ExtensionAPI) {
         return;
       }
 
-      // List/status aliases
+      // List/status aliases (match with or without extra args)
       if (["list", "status", "ls"].includes(op)) {
         ctx.ui.notify(formatTaskList(state), "info");
         return;
       }
 
       // Treat anything else as a goal
-      const goalText = commandArgsToText(args);
+      const goalText = sanitizeText(commandArgsToText(args), MAX_GOAL_TEXT_LENGTH);
       if (goalText) {
         state.currentGoal = goalText;
         state.goalId = generateGoalId();
