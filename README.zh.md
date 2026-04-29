@@ -68,9 +68,9 @@ pi install -l npm:pi-anchor
 用户: /anchor
 
 显示:
-  ⚓ Tasks · ⏳ 3/5 pending · auto on · retry 0/20
+  ⚓ 任务 · ⏳ 3/5 待完成 · 自动续命 开启 · 上限: 20
   
-    🎯 实现用户登录功能
+    🎯 目标: 实现用户登录功能
   
     📋 待完成 (3):
       □ #3 创建登录 API 端点
@@ -88,15 +88,16 @@ pi install -l npm:pi-anchor
 
 ```
 > /anchor
-┌─────────────────────────────────────────┐
-│ /anchor <目标>   设置目标，AI 自动拆解   │
-│ help            显示帮助                │
-│ auto on         开启自动续命            │
-│ auto off        关闭自动续命            │
-│ limit <n>       设置最大续命次数        │
-│ list            显示任务列表            │
-│ clear           清除所有任务            │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│ help            显示可用命令                     │
+│ auto on         开启自动续命                     │
+│ auto off        关闭自动续命                     │
+│ auto retry on   开启自动续命（完整写法）         │
+│ auto retry off  关闭自动续命（完整写法）         │
+│ limit           设置最大自动续命次数             │
+│ list            显示当前任务列表                 │
+│ clear           清除所有任务和目标               │
+└──────────────────────────────────────────────────┘
 ```
 
 输入部分字符会自动过滤:
@@ -128,7 +129,7 @@ pi install -l npm:pi-anchor
 - [ ] #4: 添加 JWT 令牌生成
 - [ ] #5: 编写单元测试
 
-请继续完成这些任务，不要停下来。
+还有 3 个任务待完成，让我们继续推进。
 ```
 
 ### 状态文件
@@ -168,12 +169,15 @@ JSON 结构:
 ### 本地测试
 
 ```bash
-# 方法 1: 从本地路径安装
+# 方法 1: 先构建，再从本地路径安装
+cd /Users/yuanzhi/code/pi-task-persistence
+npm install --legacy-peer-deps
+npm run build
 cd /path/to/test-project
 pi install -l /Users/yuanzhi/code/pi-task-persistence
 pi
 
-# 方法 2: 直接加载扩展
+# 方法 2: 直接加载扩展源码
 cd /path/to/test-project
 pi -e /Users/yuanzhi/code/pi-task-persistence/extensions/index.ts
 ```

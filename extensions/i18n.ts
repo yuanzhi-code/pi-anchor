@@ -61,8 +61,24 @@ const translations: Record<string, Record<Lang, string>> = {
 
   // Task tool list
   noTasksYet: { en: "No tasks yet.", zh: "暂无任务。" },
-  tasksLabel: { en: "Tasks:", zh: "Tasks:" },
+  tasksLabel: { en: "Tasks:", zh: "任务:" },
   pendingLabel: { en: "pending", zh: "未完成" },
+
+  // Task tool responses
+  addedTask: { en: "Added task #{0}: {1}", zh: "已添加任务 #{0}: {1}" },
+  taskCompleted: { en: "Task #{0} completed", zh: "任务 #{0} 已完成" },
+  taskReopened: { en: "Task #{0} reopened", zh: "任务 #{0} 已重新打开" },
+  deletedTask: { en: "Deleted task #{0}: {1}", zh: "已删除任务 #{0}: {1}" },
+  clearedTasksTool: { en: "Cleared {0} tasks and goal", zh: "已清除 {0} 个任务和目标" },
+  unknownAction: { en: "Unknown action: {0}", zh: "未知操作: {0}" },
+
+  // Widget display
+  anchorTasksHeader: { en: "⚓ Tasks", zh: "⚓ 任务" },
+  autoRetryOnWidget: { en: "auto retry on", zh: "自动续命 开启" },
+  autoRetryOffWidget: { en: "auto retry off", zh: "自动续命 关闭" },
+  statusDone: { en: "{0}/{1} done", zh: "{0}/{1} 完成" },
+  statusPending: { en: "{0}/{1} pending", zh: "{0}/{1} 待完成" },
+  retryCount: { en: "retry {0}/{1}", zh: "重试 {0}/{1}" },
 
   // Widget
   setGoalHint: { en: "/anchor <goal>", zh: "/anchor <目标>" },
@@ -81,8 +97,14 @@ const translations: Record<string, Record<Lang, string>> = {
   completedList: { en: "  ✅ Completed ({0}):", zh: "  ✅ 已完成 ({0}):" },
   moreCompleted: { en: "    ... {0} more", zh: "    ... 还有 {0} 个" },
   hintHelpGoal: { en: "  💡 /anchor help for commands | /anchor <goal> to set goal", zh: "  💡 /anchor help 查看命令 | /anchor <目标> 设置目标" },
+  formatStatusDone: { en: "✓ {0}/{1} done", zh: "✓ {0}/{1} 完成" },
+  formatStatusPending: { en: "⏳ {0}/{1} pending", zh: "⏳ {0}/{1} 待完成" },
+  formatAutoRetryOn: { en: "auto retry on", zh: "自动续命 开启" },
+  formatAutoRetryOff: { en: "auto retry off", zh: "自动续命 关闭" },
+  formatLimit: { en: "limit: {0}", zh: "上限: {0}" },
 
   // Help command
+  anchorTaskCommands: { en: "⚓ Task Commands", zh: "⚓ 任务命令" },
   helpSetGoal: { en: "  /anchor <goal>        Set goal, AI auto-decomposes into tasks", zh: "  /anchor <目标>        设置目标，AI 自动拆解为具体任务" },
   helpShowStatus: { en: "  /anchor                 Show current status and task list", zh: "  /anchor                 显示当前状态和任务列表" },
   helpShowHelp: { en: "  /anchor help            Show this help", zh: "  /anchor help            显示此帮助" },

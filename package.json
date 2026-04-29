@@ -18,11 +18,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourname/pi-anchor.git"
+    "url": "git+https://github.com/yuanzhi-code/pi-anchor.git"
   },
   "files": [
     "dist/",
     "README.md",
+    "README.zh.md",
     "LICENSE"
   ],
   "scripts": {
@@ -30,13 +31,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint extensions/ --ext .ts",
+    "lint": "eslint extensions/",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
   "pi": {
     "extensions": [
-      "./extensions"
+      "./dist"
     ]
   },
   "peerDependencies": {

@@ -3,6 +3,9 @@ node_modules/
 yarn.lock
 pnpm-lock.yaml
 
+# Local Pi session state
+.pi/
+
 # Build output
 dist/
 *.js
@@ -14,6 +17,9 @@ dist/
 # Test coverage
 coverage/
 .vitest/
+
+# Package archives
+*.tgz
 
 # IDE
 .vscode/
@@ -39,3 +45,9 @@ yarn-error.log*
 # Temporary files
 *.tmp
 *.temp
+
+# Pi local state
+.pi/
+
+# Package tarballs
+*.tgz

@@ -68,9 +68,9 @@ pi install -l npm:pi-anchor
 User: /anchor
 
 Display:
-  ⚓ Tasks · ⏳ 3/5 pending · auto on · retry 0/20
+  ⚓ Tasks · ⏳ 3/5 pending · auto retry on · limit: 20
   
-    🎯 Implement user login
+    🎯 Goal: Implement user login
   
     📋 Pending (3):
       □ #3 Create login API endpoint
@@ -88,15 +88,16 @@ After typing `/anchor`, dynamic hints for available commands are shown:
 
 ```
 > /anchor
-┌─────────────────────────────────────────┐
-│ /anchor <goal>   Set goal, AI decomposes│
-│ help             Show help              │
-│ auto on          Enable auto-retry      │
-│ auto off         Disable auto-retry     │
-│ limit <n>        Set max retry limit    │
-│ list             Show task list         │
-│ clear            Clear all tasks        │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│ help             Show available commands        │
+│ auto on          Enable auto-retry              │
+│ auto off         Disable auto-retry             │
+│ auto retry on    Enable auto-retry (full syntax)│
+│ auto retry off   Disable auto-retry (full syntax)│
+│ limit            Set max auto-retries           │
+│ list             Show current task list         │
+│ clear            Clear all tasks and goal       │
+└─────────────────────────────────────────────────┘
 ```
 
 Partial input auto-filters:
@@ -128,7 +129,7 @@ When the AI finishes a turn, if there are unfinished tasks, a reminder is automa
 - [ ] #4: Add JWT token generation
 - [ ] #5: Write unit tests
 
-Please continue completing these tasks without stopping.
+3 task(s) remaining. Let's keep going.
 ```
 
 ### State Files
@@ -168,12 +169,15 @@ JSON structure:
 ### Local Testing
 
 ```bash
-# Method 1: Install from local path
+# Method 1: Build, then install from local path
+cd /Users/yuanzhi/code/pi-task-persistence
+npm install --legacy-peer-deps
+npm run build
 cd /path/to/test-project
 pi install -l /Users/yuanzhi/code/pi-task-persistence
 pi
 
-# Method 2: Load extension directly
+# Method 2: Load extension source directly
 cd /path/to/test-project
 pi -e /Users/yuanzhi/code/pi-task-persistence/extensions/index.ts
 ```
